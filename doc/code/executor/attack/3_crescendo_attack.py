@@ -33,9 +33,12 @@ import argparse
 import asyncio
 import logging
 import os
-
 import wandb
+import httpx
+from dotenv import load_dotenv
 from pyrit.common import IN_MEMORY, initialize_pyrit
+
+load_dotenv()
 
 # Enable detailed logging to see attack progress in real-time
 logging.basicConfig(
@@ -54,6 +57,9 @@ from pyrit.prompt_converter import EmojiConverter
 from pyrit.prompt_normalizer import PromptConverterConfiguration
 from pyrit.prompt_target import OpenAIChatTarget, GPT5Target
 from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
+
+# Initialize the tracking list to prevent AttributeError warnings
+CrescendoAttack._wandb_attacker_outputs = []
 
 # Model configuration mapping: friendly name -> (target_type, model_identifier, default_params)
 MODEL_CONFIGS = {
@@ -89,7 +95,7 @@ MODEL_CONFIGS = {
     # HuggingFace Router models
     "gemma-3-27b": {
         "target_type": "huggingface",
-        "model_id": "google/gemma-3-27b-it:nebius",
+        "model_id": "google/gemma-3-27b-it:scaleway",
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -101,6 +107,44 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
+
+    # Configuration for the 3B victim
+    "llama-3.2-3b": {
+        "target_type": "huggingface",
+        # "model_id": "meta-llama/Llama-3.2-3B-Instruct:hyperbolic",
+        "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+
+    "qwen2.5-7b-together": {
+        "target_type": "huggingface",
+        "model_id": "Qwen/Qwen2.5-7B-Instruct:together",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+
+    "gemma-3-12b-it": {
+        "target_type": "huggingface",
+        "model_id": "google/gemma-3-12b-it",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+
+    # Configuration for the 11B victim
+    # Note: Try without :novita suffix first, as 11B might not be available via novita provider
+    # "llama-3.2-11b": {
+    #     "target_type": "huggingface",
+    #     "model_id": "meta-llama/Llama-3.2-11B-Instruct:hyperbolic",
+    #     "endpoint": "https://router.huggingface.co/v1/chat/completions",
+    #     "api_key_env": "HF_TOKEN",
+    #     "fallback_key_env": "HUGGINGFACE_TOKEN",
+    # },
+
+
     "llama-3-70b": {
         "target_type": "huggingface",
         "model_id": "meta-llama/Meta-Llama-3-70B-Instruct",
@@ -153,6 +197,11 @@ def create_target_from_config(model_name, temperature=None):
     
     if target_type == "huggingface":
         params["api_version"] = None  # HF Router doesn't use Azure's api-version parameter
+        # Set longer timeout for HuggingFace models, especially smaller ones that may be slower
+        # Use 60 minutes (3600 seconds) for read timeout to handle slow responses
+        params["httpx_client_kwargs"] = {
+            "timeout": httpx.Timeout(connect=300.0, read=3600.0, write=30.0, pool=300.0)
+        }
     
     return OpenAIChatTarget(**params)
 
@@ -239,19 +288,37 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
     if hasattr(CrescendoAttack, '_wandb_attacker_outputs'):
         CrescendoAttack._wandb_attacker_outputs = []
 
-    # Disable converters for llama-3.2-1b as it doesn't understand emoji-encoded prompts
-    if victim_model == "llama-3.2-1b":
-        converters = []  # No converters for llama-3.2-1b
-        print("⚠️  Disabling prompt converters for llama-3.2-1b (model doesn't understand emoji encoding)")
+    # --- STEP 2: UPDATED SCORER & CONVERTER LOGIC ---
+    # Disable converters for Llama-3.2 models (they have issues with emoji converters via HuggingFace Router)
+    if victim_model in [
+        "llama-3.2-1b",
+        "llama-3.2-3b",
+        "llama-3.2-11b",
+        "qwen2.5-7b-together",
+        "gemma-3-12b-it",
+    ]:
+        converters = []  # No converters for Llama-3.2 models (HuggingFace Router compatibility)
+        print(f"⚠️  Disabling prompt converters for {victim_model}")
     else:
         converters = PromptConverterConfiguration.from_converters(converters=[EmojiConverter()])
+    
     converter_config = AttackConverterConfig(request_converters=converters)
 
-    # Create scorer target - use gemma-3-27b for llama-3.2-1b, otherwise GPT-4o
-    if victim_model == "llama-3.2-1b":
-        scorer_target = create_target_from_config("gemma-3-27b")
+    # Use gemma-3-27b for scoring small victims, otherwise GPT-4o
+    # Note: 11b is larger, so we use GPT-4o for scoring
+    if victim_model in [
+        "llama-3.2-1b",
+        "llama-3.2-3b",
+        "llama-3.2-11b",
+        "qwen2.5-7b-together",
+        "gemma-3-12b-it",
+    ]:
+        scorer_target_name = "gemma-3-27b"
     else:
-        scorer_target = create_target_from_config("gpt-4o")
+        scorer_target_name = "gpt-4o"
+
+    scorer_target = create_target_from_config(scorer_target_name)
+    # --- END OF STEP 2 BLOCK ---
     
     # Note that below we are looping through the objectives, because we want to set a separate scoring configuration for each attack execution.
     # If you are using the same configuration across multiple attacks, you can use the `AttackExecutor`'s `execute_multi_turn_attacks_async` method to run multiple objectives instead.
