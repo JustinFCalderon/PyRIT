@@ -88,6 +88,20 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
+    "llama-3.1-8b": {
+        "target_type": "huggingface",
+        "model_id": "meta-llama/Llama-3.1-8B-Instruct:novita",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+    "deepseek-r1-distill-llama-8b": {
+        "target_type": "huggingface",
+        "model_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B:novita",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
 }
 
 

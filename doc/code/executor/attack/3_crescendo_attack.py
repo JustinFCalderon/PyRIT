@@ -133,6 +133,20 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
+    "llama-3.1-8b": {
+        "target_type": "huggingface",
+        "model_id": "meta-llama/Llama-3.1-8B-Instruct:novita",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+    "deepseek-r1-distill-llama-8b": {
+        "target_type": "huggingface",
+        "model_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B:novita",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
 
     # Configuration for the 11B victim
     # Note: Try without :novita suffix first, as 11B might not be available via novita provider
@@ -296,6 +310,8 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.2-11b",
         "qwen2.5-7b-together",
         "gemma-3-12b-it",
+        "llama-3.1-8b",                   
+        "deepseek-r1-distill-llama-8b", 
     ]:
         converters = []  # No converters for Llama-3.2 models (HuggingFace Router compatibility)
         print(f"⚠️  Disabling prompt converters for {victim_model}")
@@ -312,6 +328,8 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.2-11b",
         "qwen2.5-7b-together",
         "gemma-3-12b-it",
+        "llama-3.1-8b",                    
+        "deepseek-r1-distill-llama-8b", 
     ]:
         scorer_target_name = "gemma-3-27b"
     else:
