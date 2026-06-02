@@ -77,7 +77,7 @@ def get_httpx_client(
 
     # Only pass proxies if we actually have one (None can be passed too, but keep it tidy)
     if proxies is not None:
-        httpx_client_kwargs["proxies"] = proxies
+        httpx_client_kwargs["proxy"] = proxies
 
     return client_class(
         verify=verify_certs,
@@ -89,7 +89,7 @@ def get_httpx_client(
 
 @retry(
     retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError)),
-    stop=stop_after_attempt(2),
+    stop=stop_after_attempt(3),
     wait=wait_exponential_jitter(initial=1, max=30),
     reraise=True,
 )
