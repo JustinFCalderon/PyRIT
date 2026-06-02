@@ -102,6 +102,13 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
+    "llama-3.1-8b-local": {
+        "target_type": "openai",
+        "model_id": "llama3.1:8b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",       # value doesn't matter for Ollama
+        "fallback_key_env": "HF_TOKEN",
+    },
 }
 
 
@@ -134,8 +141,6 @@ def create_target_from_config(model_name, temperature=None):
 
 
 def pick_scorer_model(victim_model):
-    if victim_model in ["llama-3.2-1b", "llama-3.2-3b", "qwen2.5-7b-together"]:
-        return "gemma-3-27b"
     return "gemma-3-27b"
 
 

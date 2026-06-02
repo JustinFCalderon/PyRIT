@@ -64,14 +64,16 @@ def build_isolated_output_row(full_row, last_attacker_turn, isolated_row, source
     isolated_response = isolated_row.get("response", "")
 
     return {
-        "scenario": isolated_row.get("scenario", "unknown"),
-        "turn": 1,
-        "objective": full_row.get("objective"),
-        "source_full_jsonl": str(source_file),
+        "scenario":             isolated_row.get("scenario", "unknown"),
+        "jailbroken":           isolated_row.get("jailbroken", False),
+        "turn":                 1,
+        "objective":            full_row.get("objective"),
+        "victim_model":         isolated_row.get("victim_model", ""),
+        "source_full_jsonl":    str(source_file),
         "source_full_scenario": full_row.get("scenario"),
-        "source_full_turn": full_row.get("turn"),
+        "source_full_turn":     full_row.get("turn"),
         "conversation_history": [
-            {"role": "user", "content": last_attacker_turn},
+            {"role": "user",      "content": last_attacker_turn},
             {"role": "assistant", "content": isolated_response},
         ],
         "response": isolated_response,

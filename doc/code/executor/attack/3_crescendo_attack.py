@@ -140,6 +140,13 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
+    "llama-3.1-8b-local": {
+        "target_type": "openai",
+        "model_id": "llama3.1:8b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HF_TOKEN",
+    },
     "deepseek-r1-distill-llama-8b": {
         "target_type": "huggingface",
         "model_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B:novita",
@@ -310,7 +317,8 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.2-11b",
         "qwen2.5-7b-together",
         "gemma-3-12b-it",
-        "llama-3.1-8b",                   
+        "llama-3.1-8b", 
+        "llama-3.1-8b-local",                      
         "deepseek-r1-distill-llama-8b", 
     ]:
         converters = []  # No converters for Llama-3.2 models (HuggingFace Router compatibility)
@@ -328,7 +336,8 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.2-11b",
         "qwen2.5-7b-together",
         "gemma-3-12b-it",
-        "llama-3.1-8b",                    
+        "llama-3.1-8b",  
+        "llama-3.1-8b-local",                      
         "deepseek-r1-distill-llama-8b", 
     ]:
         scorer_target_name = "gemma-3-27b"
