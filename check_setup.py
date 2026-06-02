@@ -1,220 +1,272 @@
 import os
 import sys
+import json
 import requests
+import importlib.util
+from pathlib import Path
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, InferenceClient
 
-from pathlib import Path
+# ── Load .env ─────────────────────────────────────────────────────────────
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 print(f"Loaded .env from: {env_path} (exists={env_path.exists()})")
 
-# Ensure terminal handles special characters
 sys.stdout.reconfigure(encoding='utf-8')
-# load_dotenv()
+
+# ── Load config from run_batch.py ─────────────────────────────────────────
+# Single source of truth — no hardcoded models here
+def load_run_batch_config():
+    run_batch_path = Path(__file__).resolve().parent / "run_batch.py"
+    try:
+        spec = importlib.util.spec_from_file_location("run_batch", run_batch_path)
+        mod  = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return {
+            'VICTIM_MODEL':  getattr(mod, 'VICTIM_MODEL',  None),
+            'ATTACK_MODEL':  getattr(mod, 'ATTACK_MODEL',  None),
+            'MODE':          getattr(mod, 'MODE',          None),
+            'active_runs':   getattr(mod, 'active_runs',   None),
+            'active_objectives': getattr(mod, 'active_objectives', []),
+        }
+    except Exception as e:
+        print(f"⚠️  Could not import run_batch.py: {e}")
+        print("    Falling back to .env for model config")
+        return {
+            'VICTIM_MODEL':  os.getenv("VICTIM_MODEL", "llama-3.1-8b-local"),
+            'ATTACK_MODEL':  os.getenv("ATTACKER_MODEL", "gemma-3-27b"),
+            'MODE':          None,
+            'active_runs':   None,
+            'active_objectives': [],
+        }
+
+# ── Load MODEL_CONFIGS from 3_crescendo_attack.py ────────────────────────
+def load_model_configs():
+    script_path = Path(__file__).resolve().parent / \
+        "doc/code/executor/attack/3_crescendo_attack.py"
+    try:
+        spec = importlib.util.spec_from_file_location("crescendo", script_path)
+        mod  = importlib.util.module_from_spec(spec)
+        # Prevent the script from running its __main__ block
+        mod.__spec__.name = "crescendo"
+        spec.loader.exec_module(mod)
+        return getattr(mod, 'MODEL_CONFIGS', {})
+    except Exception as e:
+        print(f"⚠️  Could not load MODEL_CONFIGS from 3_crescendo_attack.py: {e}")
+        return {}
+
+# ── Check functions ───────────────────────────────────────────────────────
 
 def check_huggingface_connection(api):
     print("\n--- CHECKING HUGGING FACE CONNECTION ---")
     try:
         user_info = api.whoami()
-        print(f"✅ [SUCCESS] Authenticated as user: {user_info['name']}")
+        print(f"✅ Authenticated as: {user_info['name']}")
         return True
     except Exception as e:
-        print(f"❌ [FAILURE] Authentication failed. Check your HF_TOKEN in .env.")
+        print(f"❌ Authentication failed. Check HF_TOKEN in .env")
         print(f"   Error: {e}")
         return False
 
 def check_token_permissions(api):
     try:
-        info = api.whoami()
-        # Retrieve all authorized scopes from the token
+        info   = api.whoami()
         scopes = info.get("auth", {}).get("accessToken", {}).get("scopes", [])
-        
-        # Check for any variation of the required permissions
-        has_read = any("read" in s.lower() for s in scopes)
+        has_read      = any("read"      in s.lower() for s in scopes)
         has_inference = any("inference" in s.lower() for s in scopes)
-        
         if has_read and has_inference:
-            print("✅ [SUCCESS] Token has sufficient scopes.")
+            print("✅ Token has sufficient scopes")
         else:
-            missing = []
-            if not has_read: missing.append("Read (Gated Repos)")
-            if not has_inference: missing.append("Inference Providers")
-            print("ℹ️  Token scopes not introspectable (fine-grained token).")
-
+            print("ℹ️  Token scopes not introspectable (fine-grained token) — OK")
     except Exception as e:
-        print(f"⚠️ [WARNING] Could not read token scopes via whoami(): {e}")
-        print("    This is common. Rely on the router chat test + model_info checks above.")
-
+        print(f"⚠️  Could not read token scopes: {e}")
+        print("    Rely on router chat test below")
 
 def check_model_access(api, model_id):
-    # Strip provider suffix (e.g., :nebius) for repo validation
-    clean_id = model_id.split(":")[0] 
-    print(f"  > Checking access for: {clean_id}...", end="", flush=True)
+    clean_id = model_id.split(":")[0]
+    print(f"  > Checking repo access: {clean_id}...", end="", flush=True)
     try:
         api.model_info(repo_id=clean_id)
-        print(" [SUCCESS] Access verified.")
+        print(" ✅ Access verified")
         return True
     except Exception as e:
-        print(f" [FAILURE] Error: {e}")
+        print(f" ❌ {e}")
         return False
+
+def check_router_chat(token, model_id):
+    clean_id = model_id.split(":")[0]
+    print(f"  > Router chat test: {clean_id}...", end="", flush=True)
+    try:
+        r = requests.post(
+            "https://router.huggingface.co/v1/chat/completions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "model": model_id,   # keep provider suffix (e.g. :novita)
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            },
+            timeout=20,
+        )
+        if r.status_code == 200:
+            print(f" ✅ HTTP {r.status_code}")
+        else:
+            print(f" ❌ HTTP {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        print(f" ❌ {e}")
 
 def check_inference_status(token, model_id):
     clean_id = model_id.split(":")[0]
-    print(f"  > Testing inference for: {clean_id}...", end="", flush=True)
+    print(f"  > Inference client test: {clean_id}...", end="", flush=True)
     try:
-        # Use provider="auto" to bypass specific 404s
         client = InferenceClient(api_key=token, provider="auto")
-        
-        # FIX: Call chat.completions (Conversational task) instead of text_generation
         client.chat.completions.create(
             model=clean_id,
             messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=1
+            max_tokens=1,
         )
-        print(" [SUCCESS] Inference live.")
+        print(" ✅ Inference live")
     except Exception as e:
-        print(f" [FAILURE] Error: {e}")
+        print(f" ❌ {e}")
 
-def derive_victim_nickname(victim_id: str) -> str:
-    """
-    Convert VICTIM_MODEL (HF repo id or ollama tag) -> nickname used by ollama_tag_map.
-    Examples:
-      "meta-llama/Llama-3.2-3B-Instruct" -> "llama-3.2-3b"
-      "meta-llama/Llama-3.2-1B-Instruct:novita" -> "llama-3.2-1b"
-      "llama3.2:3b" -> "llama-3.2-3b"
-    """
-    s = (victim_id or "").strip().lower()
-
-    # Remove provider suffix like ":novita"
-    base = s.split(":", 1)[0]
-
-    # Handle ollama tags
-    if base.startswith("llama3.2:"):
-        size = base.split(":", 1)[1]
-        if size == "1b":
-            return "llama-3.2-1b"
-        if size == "3b":
-            return "llama-3.2-3b"
-
-    # Handle HF repo ids
-    if "llama-3.2-1b" in base or "llama-3.2-1b-instruct" in base:
-        return "llama-3.2-1b"
-    if "llama-3.2-3b" in base or "llama-3.2-3b-instruct" in base:
-        return "llama-3.2-3b"
-    if "llama-3.1-8b" in base or "llama-3.1-8b-instruct" in base:
-        return "llama-3.1-8b"
-
-    # Safe default
-    return "llama-3.2-1b"
-
-def check_ollama_local():
-    print("\n--- CHECKING OLLAMA (Local) ---")
+def check_ollama_server():
+    print("\n--- CHECKING OLLAMA SERVER ---")
     try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=2)
-        if response.status_code == 200:
-            print("✅ [SUCCESS] Ollama server is running and reachable.")
-            return True
+        r = requests.get("http://localhost:11434/api/tags", timeout=3)
+        if r.status_code == 200:
+            models = [m['name'] for m in r.json().get('models', [])]
+            print(f"✅ Ollama running  |  models: {', '.join(models) or 'none'}")
+            return True, models
         else:
-            print(f"⚠️ [WARNING] Ollama server responded with status: {response.status_code}")
+            print(f"⚠️  Ollama responded with status {r.status_code}")
+            return False, []
     except requests.exceptions.ConnectionError:
-        print("❌ [FAILURE] Could not connect to Ollama. Run 'ollama serve'.")
-    return False
+        print("❌ Ollama not reachable — run: ollama serve")
+        return False, []
 
-def check_router_chat(token, model_id):
-    url = "https://router.huggingface.co/v1/chat/completions"
-    clean_id = model_id.split(":")[0]
-    r = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "model": clean_id,
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
-        },
-        timeout=20,
-    )
-    print(f"  > Router chat test: HTTP {r.status_code}")
-    if r.status_code != 200:
-        print("  > Response:", r.text[:400])
+def check_ollama_model(ollama_model_id, available_models):
+    print(f"  > Model '{ollama_model_id}'...", end="", flush=True)
+    if any(ollama_model_id in m for m in available_models):
+        print(" ✅ Available")
+        return True
+    else:
+        print(f" ❌ Not found — run: ollama pull {ollama_model_id}")
+        return False
 
-
-def check_ollama_model(model_tag):
-    # Verify the specific tag pulled in run_batch.py is ready
-    print(f"\n--- CHECKING OLLAMA MODEL: {model_tag} ---")
+def check_ollama_inference(ollama_model_id):
+    print(f"  > Quick inference test...", end="", flush=True)
     try:
-        response = requests.get("http://localhost:11434/api/tags")
-        if response.status_code == 200:
-            models = [m['name'] for m in response.json().get('models', [])]
-            if model_tag in models:
-                print(f"✅ [SUCCESS] {model_tag} is downloaded and ready.")
-            else:
-                print(f"❌ [FAILURE] {model_tag} not found. Pull it locally first.")
+        r = requests.post(
+            "http://localhost:11434/v1/chat/completions",
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer none"},
+            json={
+                "model": ollama_model_id,
+                "messages": [{"role": "user", "content": "Reply with one word: ready"}],
+                "max_tokens": 5,
+            },
+            timeout=30,
+        )
+        if r.status_code == 200:
+            text = r.json()["choices"][0]["message"]["content"].strip()
+            print(f" ✅ Response: '{text}'")
+        else:
+            print(f" ❌ HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
-        print(f"❌ [FAILURE] Connection error: {e}")
+        print(f" ❌ {e}")
+
+def check_scripts_exist():
+    print("\n--- CHECKING SCRIPTS ---")
+    scripts = [
+        ("3_crescendo_attack.py", "doc/code/executor/attack/3_crescendo_attack.py"),
+        ("last_turn_replay.py",   "last_turn_replay.py"),
+        ("attack_utils.py",       "attack_utils.py"),
+    ]
+    for label, path in scripts:
+        exists = Path(path).exists()
+        status = "✅" if exists else "❌"
+        print(f"  {status} {label}: {Path(path).resolve()}")
+
+def check_model_registered(model_configs, model_key, label):
+    registered = model_key in model_configs
+    status = "✅" if registered else "❌"
+    detail = "" if registered else f"Add '{model_key}' to MODEL_CONFIGS in 3_crescendo_attack.py"
+    print(f"  {status} {label} '{model_key}' registered in MODEL_CONFIGS"
+          + (f"\n     {detail}" if detail else ""))
+    return registered
+
+# ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
-    # ------------------------------------------------------------------
-    # 1) Load token
-    # ------------------------------------------------------------------
+    # Load configs
+    cfg          = load_run_batch_config()
+    model_configs = load_model_configs()
+
+    VICTIM_MODEL  = cfg['VICTIM_MODEL']
+    ATTACK_MODEL  = cfg['ATTACK_MODEL']
+    MODE          = cfg['MODE']
+    active_runs   = cfg['active_runs']
+    objectives    = cfg['active_objectives']
+
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+
+    # Resolve victim config
+    victim_cfg      = model_configs.get(VICTIM_MODEL, {})
+    victim_model_id = victim_cfg.get("model_id", VICTIM_MODEL)
+    victim_endpoint = victim_cfg.get("endpoint", "")
+    victim_is_local = "localhost" in victim_endpoint
+
+    attacker_cfg      = model_configs.get(ATTACK_MODEL, {})
+    attacker_model_id = attacker_cfg.get("model_id", ATTACK_MODEL)
+
+    print("\n" + "=" * 60)
+    print("Setup Check")
+    print(f"  Victim:   {VICTIM_MODEL} → {victim_model_id}")
+    print(f"  Attacker: {ATTACK_MODEL} → {attacker_model_id}")
+    print(f"  Mode:     {MODE}")
+    if objectives and active_runs:
+        print(f"  Batch:    {len(objectives)} objectives × {active_runs} runs "
+              f"= {len(objectives)*active_runs} total")
+    print("=" * 60)
+
+    # 1. Scripts
+    check_scripts_exist()
+
+    # 2. Model registration
+    print("\n--- MODEL REGISTRATION ---")
+    check_model_registered(model_configs, VICTIM_MODEL,  "Victim")
+    check_model_registered(model_configs, ATTACK_MODEL, "Attacker")
+
+    # 3. HuggingFace auth (always needed for attacker)
     if not token:
-        print("❌ [FAILURE] Neither HF_TOKEN nor HUGGINGFACE_TOKEN found in .env.")
+        print("\n❌ HF_TOKEN not set in .env — needed for attacker model")
         return
-
     api = HfApi(token=token)
-
-    # ------------------------------------------------------------------
-    # 2) Hugging Face authentication (ONCE)
-    # ------------------------------------------------------------------
-    print("\n--- CHECKING HUGGING FACE CONNECTION ---")
     if check_huggingface_connection(api):
         check_token_permissions(api)
 
-    # ------------------------------------------------------------------
-    # 3) Load model config from .env
-    # ------------------------------------------------------------------
-    attacker = os.getenv("ATTACKER_MODEL", "google/gemma-3-27b-it")
-    victim_id = os.getenv("VICTIM_MODEL", "meta-llama/Llama-3.2-1B-Instruct")
-    judge = os.getenv("JUDGE_MODEL", "google/gemma-3-27b-it")
+    # 4. Victim checks — local or cloud
+    if victim_is_local:
+        ollama_ok, available = check_ollama_server()
+        if ollama_ok:
+            if check_ollama_model(victim_model_id, available):
+                check_ollama_inference(victim_model_id)
+    else:
+        print("\n--- CHECKING VICTIM MODEL (CLOUD) ---")
+        print(f"  Model: {victim_model_id}")
+        if check_model_access(api, victim_model_id):
+            check_router_chat(token, victim_model_id)
+            check_inference_status(token, victim_model_id)
 
-    victim_nickname = derive_victim_nickname(victim_id)
+    # 5. Attacker checks (always cloud)
+    print("\n--- CHECKING ATTACKER MODEL (CLOUD) ---")
+    print(f"  Model: {attacker_model_id}")
+    if check_model_access(api, attacker_model_id):
+        check_router_chat(token, attacker_model_id)
+        check_inference_status(token, attacker_model_id)
 
-    ollama_tag_map = {
-        "llama-3.2-1b": "llama3.2:1b",
-        "llama-3.2-3b": "llama3.2:3b",
-        "llama-3.1-8b": "llama3.1:8b",
-    }
-    victim_tag = ollama_tag_map.get(victim_nickname, "llama3.2:1b")
-
-    # ------------------------------------------------------------------
-    # 4) Ollama checks (ONCE)
-    # ------------------------------------------------------------------
-    print("\n--- LOCAL (OLLAMA) CHECKS ---")
-    print(f"Victim model (from .env): {victim_id}")
-    print(f"Derived victim nickname:  {victim_nickname}")
-    print(f"Expected Ollama tag:      {victim_tag}")
-
-    if check_ollama_local():
-        check_ollama_model(victim_tag)
-
-    # ------------------------------------------------------------------
-    # 5) Cloud validation (ONCE per model)
-    # ------------------------------------------------------------------
-    print("\n--- VALIDATING EXPERIMENT MODELS (CLOUD) ---")
-
-    models = {
-        "Attacker": attacker,
-        "Victim": victim_id,
-        "Judge": judge,
-    }
-
-    for role, model in models.items():
-        print(f"\n[{role}] {model}")
-        if check_model_access(api, model):
-            check_router_chat(token, model)
-            check_inference_status(token, model)
-
+    print("\n" + "=" * 60)
+    print("✅ Setup check complete — review any ❌ above before running")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
