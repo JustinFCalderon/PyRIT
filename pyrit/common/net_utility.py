@@ -67,7 +67,7 @@ def get_httpx_client(
     # httpx defaults are small; long generations frequently hit read timeouts.
     timeout = httpx_client_kwargs.pop(
         "timeout",
-        httpx.Timeout(connect=300.0, read=1800.0, write=30.0, pool=300.0),
+        httpx.Timeout(connect=30.0, read=900.0, write=30.0, pool=30.0),
     )
 
     limits = httpx_client_kwargs.pop(

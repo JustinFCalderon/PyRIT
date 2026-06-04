@@ -38,6 +38,9 @@ import httpx
 from dotenv import load_dotenv
 from pyrit.common import IN_MEMORY, initialize_pyrit
 
+os.environ["WANDB_MODE"] = "disabled"
+os.environ["WANDB_SILENT"] = "true"
+
 load_dotenv()
 
 # Enable detailed logging to see attack progress in real-time
@@ -60,6 +63,7 @@ from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
 
 # Initialize the tracking list to prevent AttributeError warnings
 CrescendoAttack._wandb_attacker_outputs = []
+
 
 # Model configuration mapping: friendly name -> (target_type, model_identifier, default_params)
 MODEL_CONFIGS = {
@@ -95,7 +99,8 @@ MODEL_CONFIGS = {
     # HuggingFace Router models
     "gemma-3-27b": {
         "target_type": "huggingface",
-        "model_id": "google/gemma-3-27b-it:scaleway",
+        # "model_id": "google/gemma-3-27b-it:scaleway",
+        "model_id": "google/gemma-3-27b-it",
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -221,8 +226,8 @@ def create_target_from_config(model_name, temperature=None):
         # Set longer timeout for HuggingFace models, especially smaller ones that may be slower
         # Use 60 minutes (3600 seconds) for read timeout to handle slow responses
         params["httpx_client_kwargs"] = {
-            "timeout": httpx.Timeout(connect=300.0, read=3600.0, write=30.0, pool=300.0)
-        }
+        "timeout": httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+    }
     
     return OpenAIChatTarget(**params)
 
