@@ -158,17 +158,16 @@ MODEL_CONFIGS = {
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
+        
     },
 
-    # Configuration for the 11B victim
-    # Note: Try without :novita suffix first, as 11B might not be available via novita provider
-    # "llama-3.2-11b": {
-    #     "target_type": "huggingface",
-    #     "model_id": "meta-llama/Llama-3.2-11B-Instruct:hyperbolic",
-    #     "endpoint": "https://router.huggingface.co/v1/chat/completions",
-    #     "api_key_env": "HF_TOKEN",
-    #     "fallback_key_env": "HUGGINGFACE_TOKEN",
-    # },
+    "gemma3-27b-local": {
+        "target_type": "openai",
+        "model_id": "gemma3:27b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",       # any non-empty value; Ollama ignores it
+        "fallback_key_env": "HF_TOKEN",
+    },
 
 
     "llama-3-70b": {
@@ -184,6 +183,20 @@ MODEL_CONFIGS = {
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
+    "gemma3-27b-local": {
+        "target_type": "openai",
+        "model_id": "gemma3:27b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",        # any non-empty value; Ollama ignores it
+        "fallback_key_env": "HF_TOKEN",
+    },
+    "mistral-small-local": {
+        "target_type": "openai",
+        "model_id": "mistral-small:24b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HF_TOKEN",
     },
 }
 
@@ -333,21 +346,7 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
     
     converter_config = AttackConverterConfig(request_converters=converters)
 
-    # Use gemma-3-27b for scoring small victims, otherwise GPT-4o
-    # Note: 11b is larger, so we use GPT-4o for scoring
-    if victim_model in [
-        "llama-3.2-1b",
-        "llama-3.2-3b",
-        "llama-3.2-11b",
-        "qwen2.5-7b-together",
-        "gemma-3-12b-it",
-        "llama-3.1-8b",  
-        "llama-3.1-8b-local",                      
-        "deepseek-r1-distill-llama-8b", 
-    ]:
-        scorer_target_name = "gemma-3-27b"
-    else:
-        scorer_target_name = "gpt-4o"
+    scorer_target_name = attacker_model   # judge always == attacker (was "gemma-3-27b")
 
     scorer_target = create_target_from_config(scorer_target_name)
     # --- END OF STEP 2 BLOCK ---
