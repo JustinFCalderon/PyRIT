@@ -133,7 +133,7 @@ MODEL_CONFIGS = {
 
     "gemma-3-12b-it": {
         "target_type": "huggingface",
-        "model_id": "google/gemma-3-12b-it",
+        "model_id": "google/gemma-3-12b-it:featherless-ai",
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -160,16 +160,6 @@ MODEL_CONFIGS = {
         "fallback_key_env": "HUGGINGFACE_TOKEN",
         
     },
-
-    "gemma3-27b-local": {
-        "target_type": "openai",
-        "model_id": "gemma3:27b",
-        "endpoint": "http://localhost:11434/v1/chat/completions",
-        "api_key_env": "HF_TOKEN",       # any non-empty value; Ollama ignores it
-        "fallback_key_env": "HF_TOKEN",
-    },
-
-
     "llama-3-70b": {
         "target_type": "huggingface",
         "model_id": "meta-llama/Meta-Llama-3-70B-Instruct",

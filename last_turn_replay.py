@@ -83,7 +83,7 @@ MODEL_CONFIGS = {
 
     "gemma-3-12b-it": {
         "target_type": "huggingface",
-        "model_id": "google/gemma-3-12b-it",
+        "model_id": "google/gemma-3-12b-it:featherless-ai",   # was "google/gemma-3-12b-it"
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -107,6 +107,13 @@ MODEL_CONFIGS = {
         "model_id": "llama3.1:8b",
         "endpoint": "http://localhost:11434/v1/chat/completions",
         "api_key_env": "HF_TOKEN",       # value doesn't matter for Ollama
+        "fallback_key_env": "HF_TOKEN",
+    },
+    "gemma3-27b-local": {
+        "target_type": "openai",
+        "model_id": "gemma3:27b",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
 }
@@ -141,7 +148,7 @@ def create_target_from_config(model_name, temperature=None):
 
 
 def pick_scorer_model(victim_model):
-    return "gemma-3-27b"
+    return "gemma3-27b-local" 
 
 
 def save_one_row_jsonl(output_dir, row):
