@@ -157,13 +157,16 @@ def pick_scorer_model(victim_model):
     return "gemma3-27b-local"
 
 
-def save_one_row_jsonl(output_dir, row):
+def save_one_row_jsonl(output_dir, row, source_stem=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    unique = uuid.uuid4().hex[:8]
-    out_path = output_dir / f"last_turn_replay_{timestamp}_{unique}.jsonl"
+    if source_stem:
+        out_path = output_dir / f"{source_stem}__last_turn_raw.jsonl"
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        unique = uuid.uuid4().hex[:8]
+        out_path = output_dir / f"last_turn_replay_{timestamp}_{unique}.jsonl"
 
     with out_path.open("w", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -171,15 +174,20 @@ def save_one_row_jsonl(output_dir, row):
     return out_path
 
 
-def save_rows_jsonl(output_dir, rows):
+def save_rows_jsonl(output_dir, rows, source_stem=None):
     """Write multiple rows (one per repeated turn) to a single jsonl file,
-    matching the one-row-per-turn schema the crescendo files use."""
+    matching the one-row-per-turn schema the crescendo files use.
+    Names the file after the parent crescendo stem so raw/last-turn/crescendo
+    files pair by a simple split on '__'."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    unique = uuid.uuid4().hex[:8]
-    out_path = output_dir / f"last_turn_replay_{timestamp}_{unique}.jsonl"
+    if source_stem:
+        out_path = output_dir / f"{source_stem}__last_turn_raw.jsonl"
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        unique = uuid.uuid4().hex[:8]
+        out_path = output_dir / f"last_turn_replay_{timestamp}_{unique}.jsonl"
 
     with out_path.open("w", encoding="utf-8") as f:
         for row in rows:
@@ -198,6 +206,9 @@ async def main():
     parser.add_argument("--repeat-k", type=int, default=1,
                         help="Repeat the SAME prompt k times in ONE growing conversation (Arm B). "
                              "k=1 reproduces the original single-turn isolation (Arm A).")
+    parser.add_argument("--source-stem", type=str, default=None,
+                        help="Parent crescendo file stem; names the output '{stem}__last_turn_raw.jsonl' "
+                             "so it pairs with the source crescendo and isolated last-turn files.")
     args = parser.parse_args()
 
     initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -257,7 +268,7 @@ async def main():
         })
         print(f"  turn {turn_idx}/{args.repeat_k}: {scenario}")
 
-    out_path = save_rows_jsonl(args.output_dir, rows)
+    out_path = save_rows_jsonl(args.output_dir, rows, source_stem=args.source_stem)
 
     final = rows[-1]
     print("✅ last_turn_replay complete")
