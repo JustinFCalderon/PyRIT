@@ -188,6 +188,13 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
+    "mistral-7b-instruct-v0.3": {
+        "target_type": "huggingface",
+        "model_id": "mistralai/Mistral-7B-Instruct-v0.3:together",   # or :featherless-ai — check the model page's provider list + enable it
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",
+        "fallback_key_env": "HUGGINGFACE_TOKEN",
+    },
 }
 
 
@@ -328,6 +335,7 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.1-8b", 
         "llama-3.1-8b-local",                      
         "deepseek-r1-distill-llama-8b", 
+        "mistral-7b-instruct-v0.3",
     ]:
         converters = []  # No converters for Llama-3.2 models (HuggingFace Router compatibility)
         print(f"⚠️  Disabling prompt converters for {victim_model}")
