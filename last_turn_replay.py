@@ -80,10 +80,9 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
-
     "gemma-3-12b-it": {
         "target_type": "huggingface",
-        "model_id": "google/gemma-3-12b-it:featherless-ai",   # was "google/gemma-3-12b-it"
+        "model_id": "google/gemma-3-12b-it:featherless-ai",  # was "google/gemma-3-12b-it"
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -106,7 +105,7 @@ MODEL_CONFIGS = {
         "target_type": "openai",
         "model_id": "llama3.1:8b",
         "endpoint": "http://localhost:11434/v1/chat/completions",
-        "api_key_env": "HF_TOKEN",       # value doesn't matter for Ollama
+        "api_key_env": "HF_TOKEN",  # value doesn't matter for Ollama
         "fallback_key_env": "HF_TOKEN",
     },
     "gemma3-27b-local": {
@@ -118,7 +117,7 @@ MODEL_CONFIGS = {
     },
     "mistral-7b-instruct-v0.3": {
         "target_type": "huggingface",
-        "model_id": "mistralai/Mistral-7B-Instruct-v0.3:together",   # or :featherless-ai — check the model page's provider list + enable it
+        "model_id": "mistralai/Mistral-7B-Instruct-v0.3:together",  # or :featherless-ai — check the model page's provider list + enable it
         "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HUGGINGFACE_TOKEN",
@@ -155,7 +154,7 @@ def create_target_from_config(model_name, temperature=None):
 
 
 def pick_scorer_model(victim_model):
-    return "gemma3-27b-local" 
+    return "gemma3-27b-local"
 
 
 def save_one_row_jsonl(output_dir, row):
@@ -172,13 +171,33 @@ def save_one_row_jsonl(output_dir, row):
     return out_path
 
 
+def save_rows_jsonl(output_dir, rows):
+    """Write multiple rows (one per repeated turn) to a single jsonl file,
+    matching the one-row-per-turn schema the crescendo files use."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    unique = uuid.uuid4().hex[:8]
+    out_path = output_dir / f"last_turn_replay_{timestamp}_{unique}.jsonl"
+
+    with out_path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    return out_path
+
+
 async def main():
-    parser = argparse.ArgumentParser(description="Replay a single isolated last attacker turn.")
+    parser = argparse.ArgumentParser(description="Replay an isolated last attacker turn, optionally repeated k times in one conversation (Arm B).")
     parser.add_argument("--victim", type=str, required=True, choices=list(MODEL_CONFIGS.keys()))
     parser.add_argument("--prompt", type=str, required=True)
     parser.add_argument("--scoring-objective", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--repeat-k", type=int, default=1,
+                        help="Repeat the SAME prompt k times in ONE growing conversation (Arm B). "
+                             "k=1 reproduces the original single-turn isolation (Arm A).")
     args = parser.parse_args()
 
     initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -188,22 +207,6 @@ async def main():
     scorer_model = pick_scorer_model(args.victim)
     scorer_target = create_target_from_config(scorer_model)
 
-    # Send the isolated prompt to the victim through PyRIT
-    request_piece = PromptRequestPiece(
-        role="user",
-        original_value=args.prompt,
-    )
-
-    prompt_request = PromptRequestResponse(
-        request_pieces=[request_piece]
-    )
-
-    victim_response_obj = await victim_target.send_prompt_async(
-        prompt_request=prompt_request
-    )
-
-    victim_response = victim_response_obj.request_pieces[0].converted_value
-
     scorer = SelfAskTrueFalseScorer(
         chat_target=scorer_target,
         true_false_question=TrueFalseQuestion(
@@ -211,42 +214,58 @@ async def main():
         ),
     )
 
-    # score = await scorer.score_text_async(text=victim_response)
-    # jailbroken = bool(score.get_value())
+    # One shared conversation_id => PyRIT memory accumulates prior turns, so each
+    # send includes the full growing history (Arm B). The prompt is identical every turn;
+    # only the accumulated context changes.
+    conversation_id = str(uuid.uuid4())
+    conversation_history = []
+    rows = []
 
-    score_list = await scorer.score_text_async(text=victim_response)
+    for turn_idx in range(1, args.repeat_k + 1):
+        request_piece = PromptRequestPiece(
+            role="user",
+            original_value=args.prompt,
+            conversation_id=conversation_id,
+        )
+        prompt_request = PromptRequestResponse(request_pieces=[request_piece])
 
-    if not score_list:
-        raise RuntimeError("Scorer returned no scores.")
+        victim_response_obj = await victim_target.send_prompt_async(prompt_request=prompt_request)
+        victim_response = victim_response_obj.request_pieces[0].converted_value
 
-    score = score_list[0]
-    score_value = score.get_value()
-    jailbroken = bool(score_value)
-    scenario = "jailbroken" if jailbroken else "not_jailbroken"
+        conversation_history.append({"role": "user", "content": args.prompt})
+        conversation_history.append({"role": "assistant", "content": victim_response})
 
+        score_list = await scorer.score_text_async(text=victim_response)
+        if not score_list:
+            raise RuntimeError("Scorer returned no scores.")
+        jailbroken = bool(score_list[0].get_value())
+        scenario = "jailbroken" if jailbroken else "not_jailbroken"
 
-    row = {
-        "timestamp": datetime.now().isoformat(),
-        "scenario": scenario,
-        "jailbroken": jailbroken,
-        "turn": 1,
-        "backtrack_count": 0,
-        "objective": args.scoring_objective,
-        "victim_model": args.victim,
-        "scorer_model": scorer_model,
-        "conversation_history": [
-            {"role": "user", "content": args.prompt},
-            {"role": "assistant", "content": victim_response},
-        ],
-        "response": victim_response,
-    }
+        rows.append({
+            "timestamp": datetime.now().isoformat(),
+            "scenario": scenario,
+            "jailbroken": jailbroken,
+            "turn": turn_idx,
+            "backtrack_count": 0,
+            "objective": args.scoring_objective,
+            "victim_model": args.victim,
+            "scorer_model": scorer_model,
+            "conversation_history": list(conversation_history),  # snapshot up through this turn
+            "response": victim_response,
+            "repeat_k": args.repeat_k,
+            "arm": "repeated_last_turn" if args.repeat_k > 1 else "last_turn",
+        })
+        print(f"  turn {turn_idx}/{args.repeat_k}: {scenario}")
 
-    out_path = save_one_row_jsonl(args.output_dir, row)
+    out_path = save_rows_jsonl(args.output_dir, rows)
 
+    final = rows[-1]
     print("✅ last_turn_replay complete")
-    print(f"   output = {out_path}")
-    print(f"   scenario = {row['scenario']}")
-    print(f"   jailbroken = {row['jailbroken']}")
+    print(f"  output      = {out_path}")
+    print(f"  repeat_k    = {args.repeat_k}")
+    print(f"  turns saved = {len(rows)}")
+    print(f"  final scenario = {final['scenario']}")
+    print(f"  any jailbroken = {any(r['jailbroken'] for r in rows)}")
 
 
 if __name__ == "__main__":
