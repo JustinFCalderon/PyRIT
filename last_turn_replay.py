@@ -124,7 +124,7 @@ MODEL_CONFIGS = {
     },
     "gemma-3-12b-local": {
         "target_type": "openai",
-        "model_id": "gemma3:12b-it-q8_0",
+        "model_id": "gemma3:12b-it-fp16",
         "endpoint": "http://localhost:11434/v1/chat/completions",
         "api_key_env": "HF_TOKEN",   # ignored by Ollama
         "fallback_key_env": "HF_TOKEN",
