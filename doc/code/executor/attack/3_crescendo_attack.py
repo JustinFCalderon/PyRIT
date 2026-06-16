@@ -188,12 +188,19 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
+    # "mistral-7b-instruct-v0.3": {
+    #     "target_type": "huggingface",
+    #     "model_id": "mistralai/Mistral-7B-Instruct-v0.3:together",   # or :featherless-ai — check the model page's provider list + enable it
+    #     "endpoint": "https://router.huggingface.co/v1/chat/completions",
+    #     "api_key_env": "HF_TOKEN",
+    #     "fallback_key_env": "HUGGINGFACE_TOKEN",
+    # },
     "mistral-7b-instruct-v0.3": {
-        "target_type": "huggingface",
-        "model_id": "mistralai/Mistral-7B-Instruct-v0.3:together",   # or :featherless-ai — check the model page's provider list + enable it
-        "endpoint": "https://router.huggingface.co/v1/chat/completions",
-        "api_key_env": "HF_TOKEN",
-        "fallback_key_env": "HUGGINGFACE_TOKEN",
+        "target_type": "openai",
+        "model_id": "mistral:7b-instruct-v0.3-fp16",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",        # any non-empty value; Ollama ignores it
+        "fallback_key_env": "HF_TOKEN",
     },
 }
 
