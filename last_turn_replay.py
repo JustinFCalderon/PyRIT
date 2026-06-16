@@ -133,7 +133,7 @@ MODEL_CONFIGS = {
         "target_type": "openai",
         "model_id": "mistral:7b-instruct-v0.3-fp16",
         "endpoint": "http://localhost:11434/v1/chat/completions",
-        "api_key_env": "HF_TOKEN",        # any non-empty value; Ollama ignores it
+        "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
 }
