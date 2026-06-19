@@ -139,10 +139,10 @@ MODEL_CONFIGS = {
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
     "llama-3.1-8b": {
-        "target_type": "huggingface",
-        "model_id": "meta-llama/Llama-3.1-8B-Instruct:novita",
-        "endpoint": "https://router.huggingface.co/v1/chat/completions",
-        "api_key_env": "HF_TOKEN",
+        "target_type": "openai",
+        "model_id": "llama3.1:8b-instruct-fp16",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",          # any non-empty value; ollama ignores it
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
     "llama-3.1-8b-local": {
