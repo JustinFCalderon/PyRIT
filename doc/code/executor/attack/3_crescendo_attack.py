@@ -131,6 +131,14 @@ MODEL_CONFIGS = {
         "fallback_key_env": "HUGGINGFACE_TOKEN",
     },
 
+    "qwen2.5-7b": {
+        "target_type": "openai",
+        "model_id": "qwen2.5:7b-instruct-fp16",          # VERIFY tag: ollama pull qwen2.5:7b-instruct-fp16
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",          # any non-empty value; ollama ignores it
+        "fallback_key_env": "HF_TOKEN",
+    },
+
     "gemma-3-12b-it": {
         "target_type": "huggingface",
         "model_id": "google/gemma-3-12b-it:featherless-ai",
@@ -331,6 +339,7 @@ async def main(attacker_model="gemma-3-27b", victim_model="gpt-4o", temperature=
         "llama-3.2-3b",
         "llama-3.2-11b",
         "qwen2.5-7b-together",
+        "qwen2.5-7b", 
         "gemma-3-12b-it",
         "llama-3.1-8b", 
         "llama-3.1-8b-local",                      

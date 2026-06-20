@@ -136,6 +136,13 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
+    "qwen2.5-7b": {
+        "target_type": "openai",
+        "model_id": "qwen2.5:7b-instruct-fp16",          # VERIFY tag: ollama pull qwen2.5:7b-instruct-fp16
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",          # any non-empty value; ollama ignores it
+        "fallback_key_env": "HF_TOKEN",
+    },
 }
 
 
