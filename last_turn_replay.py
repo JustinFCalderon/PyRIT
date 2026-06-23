@@ -230,6 +230,10 @@ async def main():
     parser.add_argument("--source-stem", type=str, default=None,
                         help="Parent crescendo file stem; names the output '{stem}__last_turn_raw.jsonl' "
                              "so it pairs with the source crescendo and isolated last-turn files.")
+    parser.add_argument("--mode", choices=["append", "fresh"], default="append",                         # --temperature already exists; just confirm it's there (it is, default 0.0)
+                    help="append = grow one conversation (Arm B). "
+                         "fresh = new conversation each turn, no history (Isolated Resampling).")
+
     args = parser.parse_args()
 
     initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -254,11 +258,11 @@ async def main():
     rows = []
 
     for turn_idx in range(1, args.repeat_k + 1):
-        request_piece = PromptRequestPiece(
-            role="user",
-            original_value=args.prompt,
-            conversation_id=conversation_id,
-        )
+    conv_id = conversation_id if args.mode == "append" else str(uuid.uuid4())
+    request_piece = PromptRequestPiece(
+        role="user", original_value=args.prompt, conversation_id=conv_id,
+    )
+    # ... send + score unchanged ...
         prompt_request = PromptRequestResponse(request_pieces=[request_piece])
 
         victim_response_obj = await victim_target.send_prompt_async(prompt_request=prompt_request)
@@ -285,10 +289,12 @@ async def main():
             "conversation_history": list(conversation_history),  # snapshot up through this turn
             "response": victim_response,
             "repeat_k": args.repeat_k,
-            "arm": "repeated_last_turn" if args.repeat_k > 1 else "last_turn",
+            "arm": "isolated_resampling" if args.mode == "fresh"
+                else ("repeated_last_turn" if args.repeat_k > 1 else "last_turn"),
         })
-        print(f"  turn {turn_idx}/{args.repeat_k}: {scenario}")
-
+        _e = "🔴" if jailbroken else "⚪"
+        print(f"  {_e} turn {turn_idx}/{args.repeat_k}: {scenario}")
+        
     out_path = save_rows_jsonl(args.output_dir, rows, source_stem=args.source_stem)
 
     final = rows[-1]
