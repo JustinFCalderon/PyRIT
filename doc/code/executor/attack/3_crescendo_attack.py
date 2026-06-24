@@ -203,6 +203,13 @@ MODEL_CONFIGS = {
         "api_key_env": "HF_TOKEN",
         "fallback_key_env": "HF_TOKEN",
     },
+    "llama-3.2-3b-local": {
+        "target_type": "openai",
+        "model_id": "llama3.2:3b-instruct-fp16",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "api_key_env": "HF_TOKEN",   # ignored by Ollama
+        "fallback_key_env": "HF_TOKEN",
+    },
 }
 
 
