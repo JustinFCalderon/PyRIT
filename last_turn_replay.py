@@ -258,10 +258,12 @@ async def main():
     rows = []
 
     for turn_idx in range(1, args.repeat_k + 1):
-    conv_id = conversation_id if args.mode == "append" else str(uuid.uuid4())
-    request_piece = PromptRequestPiece(
-        role="user", original_value=args.prompt, conversation_id=conv_id,
-    )
+        conv_id = conversation_id if args.mode == "append" else str(uuid.uuid4())
+        request_piece = PromptRequestPiece(
+            role="user",
+            original_value=args.prompt,
+            conversation_id=conv_id,
+        )
     # ... send + score unchanged ...
         prompt_request = PromptRequestResponse(request_pieces=[request_piece])
 
