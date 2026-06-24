@@ -195,16 +195,16 @@ def save_one_row_jsonl(output_dir, row, source_stem=None):
     return out_path
 
 
-def save_rows_jsonl(output_dir, rows, source_stem=None):
-    """Write multiple rows (one per repeated turn) to a single jsonl file,
-    matching the one-row-per-turn schema the crescendo files use.
-    Names the file after the parent crescendo stem so raw/last-turn/crescendo
-    files pair by a simple split on '__'."""
+def save_rows_jsonl(output_dir, rows, source_stem=None, mode="append"):
+    """Write multiple rows (one per repeated turn) to a single jsonl file.
+    fresh mode -> __isolated_raw (Isolated Resampling); append -> __last_turn_raw (Arm B)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    suffix = "__isolated_raw" if mode == "fresh" else "__last_turn_raw"
+
     if source_stem:
-        out_path = output_dir / f"{source_stem}__last_turn_raw.jsonl"
+        out_path = output_dir / f"{source_stem}{suffix}.jsonl"
     else:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         unique = uuid.uuid4().hex[:8]
@@ -297,7 +297,7 @@ async def main():
         _e = "🔴" if jailbroken else "⚪"
         print(f"  {_e} turn {turn_idx}/{args.repeat_k}: {scenario}")
         
-    out_path = save_rows_jsonl(args.output_dir, rows, source_stem=args.source_stem)
+    out_path = save_rows_jsonl(args.output_dir, rows, source_stem=args.source_stem, mode=args.mode)
 
     final = rows[-1]
     print("✅ last_turn_replay complete")
