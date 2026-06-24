@@ -264,14 +264,19 @@ async def main():
             original_value=args.prompt,
             conversation_id=conv_id,
         )
-    # ... send + score unchanged ...
         prompt_request = PromptRequestResponse(request_pieces=[request_piece])
 
         victim_response_obj = await victim_target.send_prompt_async(prompt_request=prompt_request)
         victim_response = victim_response_obj.request_pieces[0].converted_value
 
-        conversation_history.append({"role": "user", "content": args.prompt})
-        conversation_history.append({"role": "assistant", "content": victim_response})
+        # fresh mode: each turn is its own conversation, so history must NOT accumulate
+        if args.mode == "fresh":
+            turn_history = [{"role": "user", "content": args.prompt},
+                            {"role": "assistant", "content": victim_response}]
+        else:
+            conversation_history.append({"role": "user", "content": args.prompt})
+            conversation_history.append({"role": "assistant", "content": victim_response})
+            turn_history = list(conversation_history)
 
         score_list = await scorer.score_text_async(text=victim_response)
         if not score_list:
@@ -288,7 +293,8 @@ async def main():
             "objective": args.scoring_objective,
             "victim_model": args.victim,
             "scorer_model": scorer_model,
-            "conversation_history": list(conversation_history),  # snapshot up through this turn
+            "conversation_id": conv_id,                 # <-- record it so isolation is verifiable
+            "conversation_history": turn_history,        # <-- per-turn in fresh, cumulative in append
             "response": victim_response,
             "repeat_k": args.repeat_k,
             "arm": "isolated_resampling" if args.mode == "fresh"
